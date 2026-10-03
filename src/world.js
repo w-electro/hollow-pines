@@ -49,6 +49,16 @@ export function buildWorld(scene) {
   moonDisc.lookAt(0, 0, 0)
   scene.add(moonDisc)
 
+  /* stars: a few thousand points on a far dome, brighter near the top */
+  const starPos = []
+  for (let i = 0; i < 2200; i++) {
+    const a = Math.random() * Math.PI * 2, e = Math.pow(Math.random(), 0.6) * Math.PI * 0.48
+    starPos.push(Math.cos(a) * Math.cos(e) * 140, 8 + Math.sin(e) * 140, Math.sin(a) * Math.cos(e) * 140)
+  }
+  const starGeo = new THREE.BufferGeometry()
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3))
+  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xcfd6ff, size: 0.55, sizeAttenuation: true, fog: false, transparent: true, opacity: 0.85 })))
+
   /* terrain: gentle bumps, darker dirt paths, painted with vertex colours */
   const g = new THREE.PlaneGeometry(110, 110, 110, 110)
   g.rotateX(-Math.PI / 2)
@@ -214,8 +224,26 @@ export function buildWorld(scene) {
     scene.add(d)
   }
 
+  /* embers: sparks rising from the fire, recycled forever */
+  const EMBERS = 70
+  const emberPos = new Float32Array(EMBERS * 3)
+  const emberLife = new Float32Array(EMBERS).map(() => Math.random())
+  const emberGeo = new THREE.BufferGeometry()
+  emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3))
+  const embers = new THREE.Points(emberGeo, new THREE.PointsMaterial({ color: 0xffa040, size: 0.09, transparent: true, opacity: 0.9, depthWrite: false }))
+  scene.add(embers)
+
   let t = 0
   function update(dt) {
+    for (let i = 0; i < EMBERS; i++) {
+      emberLife[i] += dt * (0.35 + (i % 5) * 0.06)
+      if (emberLife[i] > 1) emberLife[i] = fire.fuel > 0 ? 0 : 1.01
+      const l = emberLife[i]
+      emberPos[i * 3] = Math.sin(i * 7.1 + l * 3) * (0.25 + l * 0.6)
+      emberPos[i * 3 + 1] = l > 1 ? -5 : 0.5 + l * (2.5 + fire.fuel * 2)
+      emberPos[i * 3 + 2] = Math.cos(i * 3.3 + l * 2) * (0.25 + l * 0.6)
+    }
+    emberGeo.attributes.position.needsUpdate = true
     t += dt
     fire.fuel = Math.max(0, fire.fuel - dt / 210) // a full fire lasts about three and a half minutes
     const on = fire.fuel > 0

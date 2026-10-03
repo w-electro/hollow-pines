@@ -132,7 +132,8 @@ export function makePlayer(scene, camera, dom, start) {
     // flashlight: drains, flickers when low, a focused beam drains fast
     const on = p.battery > 0
     p.battery = Math.max(0, p.battery - dt * (p.focus && on ? 4 : 0.45))
-    const low = p.battery < 18 && Math.random() < 0.08
+    p.flicker = Math.max(0, (p.flicker ?? 0) - dt)
+    const low = (p.battery < 18 && Math.random() < 0.08) || (p.flicker > 0 && Math.random() < 0.45)
     flashlight.intensity = !on ? 0 : low ? 6 : p.focus ? 140 : 60
     flashlight.angle = p.focus ? 0.22 : 0.42
     flashlight.distance = p.focus ? 30 : 22

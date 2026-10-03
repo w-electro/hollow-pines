@@ -19,6 +19,16 @@
           tjs: 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@' + V.tjs + '/dist/transformers.min.js',
           phonemizer: 'https://cdn.jsdelivr.net/npm/phonemizer@' + V.phonemizer + '/dist/phonemizer.js' }
     window.HP = { local: local, lib: lib }
+    // On the live site, a tiny service worker (coi.js) makes the page cross-origin isolated,
+    // so the voice engine can use several CPU threads. It needs one reload the first time.
+    if (!local && !window.crossOriginIsolated && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('coi.js').then(function () {
+        if (!navigator.serviceWorker.controller && !sessionStorage.getItem('coi-reloaded')) {
+          sessionStorage.setItem('coi-reloaded', '1')
+          location.reload()
+        }
+      }).catch(function () {})
+    }
     var map = document.createElement('script')
     map.type = 'importmap'
     map.textContent = JSON.stringify({ imports: { three: lib.three, 'three/addons/': lib.addons, '@huggingface/transformers': lib.tjs } })

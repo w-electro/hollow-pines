@@ -395,6 +395,15 @@ function frame() {
       }
     }
     if (silas.vanished) { silas.vanished = false; sfx.stinger(); player.battery = Math.max(0, player.battery - 3) }
+    // the first time you spot Silas at a new place: a sting, and your light stutters
+    if (!silas.seenAt || silas.seenAt.distanceTo(silas.mesh.position) > 1) {
+      const sp = silas.mesh.position.clone().setY(2).project(camera)
+      const d = silas.mesh.position.distanceTo(player.avatar.position)
+      if (sp.z < 1 && Math.abs(sp.x) < 0.8 && Math.abs(sp.y) < 0.8 && d < 26 && !(finale && !finale.done)) {
+        silas.seenAt = silas.mesh.position.clone()
+        if (state === 'play' && quests.index > 0) { sfx.stinger(); player.flicker = 0.9 }
+      }
+    }
 
     // actions under E
     const a = talkingTo ? null : availableAction()
