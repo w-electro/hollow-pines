@@ -4,6 +4,7 @@
 export let ctx = null
 let master, sfxBus, voiceBus, ambBus
 let heart = { gain: null, next: 0 }
+let meter = null, voiceMeter = null
 let reverbIR = null
 
 export function startAudio() {
@@ -12,8 +13,15 @@ export function startAudio() {
   master = ctx.createGain()
   master.gain.value = 0.9
   master.connect(ctx.destination)
+  // a meter on everything that reaches the speakers: tests read it to prove sound comes out
+  meter = ctx.createAnalyser()
+  meter.fftSize = 2048
+  master.connect(meter)
+  voiceMeter = ctx.createAnalyser()
+  voiceMeter.fftSize = 2048
   sfxBus = bus(0.7)
   voiceBus = bus(1.0)
+  voiceBus.connect(voiceMeter)
   ambBus = bus(0.55)
   reverbIR = impulse(3.2, 2.4)
   ambience()
@@ -252,4 +260,15 @@ export function setListener(pos, forward) {
     l.forwardX.value = forward.x; l.forwardY.value = forward.y; l.forwardZ.value = forward.z
     l.upX.value = 0; l.upY.value = 1; l.upZ.value = 0
   }
+}
+
+// loudness right now (RMS of what reaches the speakers / of the voices alone)
+export function level(which = 'all') {
+  const a = which === 'voice' ? voiceMeter : meter
+  if (!a) return 0
+  const buf = new Float32Array(a.fftSize)
+  a.getFloatTimeDomainData(buf)
+  let s = 0
+  for (const x of buf) s += x * x
+  return Math.sqrt(s / buf.length)
 }

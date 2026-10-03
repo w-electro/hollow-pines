@@ -8,7 +8,7 @@ import { makeWildlife } from './wildlife.js'
 import { makeItems, ITEM_INFO } from './items.js'
 import { makeQuests, STEPS, PAGE_TEXT } from './quests.js'
 import { makeUI } from './ui.js'
-import { startAudio, sfx, setFear, setListener, ctx as audioCtx } from './audio.js'
+import { startAudio, sfx, setFear, setListener, ctx as audioCtx, level } from './audio.js'
 import { loadDialogue, say } from './ai.js'
 import { loadVoice, speakAs, prefetch, sentenceFeeder } from './voice.js'
 import { isSelfHarm, wantsGore, redactPersonal } from './safety.js'
@@ -62,26 +62,35 @@ function progress(p) {
   // the two models together are about 850 MB; until both have reported, assume that
   ui.loading(Math.min(0.99, loaded / Math.max(total, 850e6)))
 }
+
+// Fixed lines, voiced ahead of time in the order they are needed, so they play instantly.
+// Starts the moment the voice is ready — usually while the dialogue model is still loading.
+function prefetchLines() {
+  for (const t of mason.greetings) prefetch(mason, t)
+  prefetch(mason, MASON_BARKS.wood)
+  prefetch(mason, masonHintFor('meet'))
+  // every version of the counted hints ("two more pieces", "one more"…)
+  for (const s of STEPS) for (let p = 0; p < (s.need ?? 1); p++) prefetch(mason, masonHintFor(s.id, p))
+  for (const s of STEPS) if (MASON_BARKS[s.id]) prefetch(mason, MASON_BARKS[s.id])
+  for (const t of silas.greetings) prefetch(silas, t)
+  for (const [who, line] of ENDING) prefetch(who === 'silas' ? silas : mason, line)
+  for (const t of silas.safe) prefetch(silas, t)
+  for (const t of mason.safe) prefetch(mason, t)
+}
+
 async function load() {
   if (!navigator.gpu) {
     ui.loadError('This game needs WebGPU. Please open it in Chrome or Edge on a computer.')
     return
   }
   try {
-    await Promise.all([loadDialogue(progress), loadVoice(progress)])
+    await Promise.all([loadDialogue(progress), loadVoice(progress).then(prefetchLines)])
   } catch (e) {
     console.error(e)
     ui.loadError('Something went wrong while loading. Refresh the page to try again.')
     return
   }
   ui.loading(1)
-  // fixed lines, voiced in the background while the title is up — in the order they are needed
-  for (const t of mason.greetings) prefetch(mason, t)
-  for (const s of STEPS) if (MASON_BARKS[s.id]) prefetch(mason, MASON_BARKS[s.id])
-  for (const t of silas.greetings) prefetch(silas, t)
-  for (const [who, line] of ENDING) prefetch(who === 'silas' ? silas : mason, line)
-  for (const t of silas.safe) prefetch(silas, t)
-  for (const t of mason.safe) prefetch(mason, t)
   setTimeout(() => {
     ui.show('loading', false)
     ui.show('title')
@@ -167,8 +176,11 @@ const MASON_BARKS = {
 // When a player asks for help, Mason's answer is written, not generated: it must be right.
 const ASKS_HELP = /\b(what (do|should|can|am) (i|we)\b.*\bdo(ing)?|what now|what next|where (is|are|do|should|can|to)|how do i|help|i'?m lost|stuck|objective|quest|task|mission|which way)\b/i
 function masonHint() {
-  const s = quests.step()
-  const left = s.need ? s.need - quests.progress : 0
+  return masonHintFor(quests.step().id, quests.progress)
+}
+function masonHintFor(id, progress = 0) {
+  const s = STEPS.find((x) => x.id === id)
+  const left = s.need ? s.need - progress : 0
   const n = ['', 'one', 'two', 'three'][left] ?? String(left)
   const H = {
     meet: "The fire's dying. Bring wood from the trees around camp and throw it on the fire. Three pieces.",
@@ -182,7 +194,7 @@ function masonHint() {
     finale: "Just hold on! Stay in the light, he's coming!",
     reunite: "He's here... Silas is right there. Go to him. Please.",
   }
-  return H[s.id] ?? 'Stay close to the fire.'
+  return H[id] ?? 'Stay close to the fire.'
 }
 
 const ENDING = [
@@ -222,7 +234,7 @@ function refreshQuest() {
 
 function masonSays(line) {
   mason.bubble = { text: line, thinking: false, until: performance.now() + 9000 }
-  speakAs(mason, line, { patience: 8 })
+  speakAs(mason, line, { patience: 25 })
 }
 
 function onKill() {
@@ -308,8 +320,11 @@ function feedFire() {
   refreshQuest()
 }
 
-function fixGenerator(dt) {
-  holdE += dt
+function fixGenerator() {
+  // real seconds held, not game time: a slow frame must never make the generator unfixable
+  const now = performance.now()
+  holdE += Math.min(0.25, (now - (fixGenerator.last ?? now)) / 1000)
+  fixGenerator.last = now
   ui.prompt(`Fixing the generator… ${Math.min(100, Math.round((holdE / 2.2) * 100))}%`)
   if (holdE >= 2.2) {
     holdE = 0
@@ -482,7 +497,7 @@ function frame() {
         const g = n.greet()
         n.turns.push({ role: 'user', content: '(I walk up to you in the dark with my flashlight.)' }, { role: 'assistant', content: g })
         n.bubble = { text: g, thinking: false, until: performance.now() + 8000 }
-        speakAs(n, g)
+        speakAs(n, g, { patience: 25 })
         if (n === mason && quests.is('meet')) setTimeout(() => quests.is('meet') && quests.advance(), 6500)
       }
     }
@@ -500,7 +515,7 @@ function frame() {
     // actions under E
     const a = talkingTo ? null : availableAction()
     if (a?.hold && player._eHeld) a.hold(dt)
-    else { holdE = 0; ui.prompt(talkingTo ? null : promptText(a)) }
+    else { holdE = 0; fixGenerator.last = undefined; ui.prompt(talkingTo ? null : promptText(a)) }
 
     // the fire
     if (world.fire.fuel <= 0 && !fireWarned && quests.past('meet')) { fireWarned = true; ui.toast('The fire went out. They are getting bolder.'); sfx.stinger() }
@@ -563,5 +578,5 @@ window.__game = {
   player, npcs, quests, items, shades, world, kills: () => kills, state: () => state,
   send: (t) => { $('say').value = t; return send() }, talk: (n) => startTalking(npcs[n]), stopTalking,
   teleport: (x, z) => player.avatar.position.set(x, 0, z), act: () => availableAction()?.run?.(),
-  finale: () => finale, prompt: () => promptText(availableAction()), audio: () => audioCtx?.state,
+  finale: () => finale, prompt: () => promptText(availableAction()), audio: () => audioCtx?.state, level,
 }

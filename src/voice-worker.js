@@ -4,8 +4,8 @@
 // (Apache-2.0, https://github.com/hexgrad/kokoro), rewritten on Transformers.js v4 so
 // the game ships one copy of the ML runtime instead of two.
 //
-// Runs on WASM (CPU): Kokoro's quantized weights do not sound right on WebGPU, and the
-// GPU is busy with the dialogue model and the 3D scene anyway.
+// Runs on the CPU (WASM, several threads when the page is cross-origin isolated), so the
+// 3D scene keeps the GPU to itself.
 
 const MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 let T, phonemize, tokenizer, model, voiceBase
@@ -24,7 +24,13 @@ self.onmessage = async (e) => {
   }
 }
 
-async function init({ tjs, phonemizer, local, device = 'wasm', dtype = 'q8' }) {
+async function init({ tjs, phonemizer, local, device, dtype }) {
+  // The CPU, on purpose. The GPU (fp32) is 2-3x faster, but it shares the GPU with the 3D
+  // scene: every line froze the picture for 200-350 ms. On the CPU, in this worker, speech
+  // is slower but truly parallel, and the game never stutters. (Pass device: 'webgpu' to
+  // compare. Kokoro's smaller variants output NaN on WebGPU, so the GPU needs fp32.)
+  if (!device) device = 'wasm'
+  if (!dtype) dtype = device === 'webgpu' ? 'fp32' : 'q8'
   T = await import(tjs)
   ;({ phonemize } = await import(phonemizer))
   if (local) {
@@ -43,8 +49,16 @@ async function init({ tjs, phonemizer, local, device = 'wasm', dtype = 'q8' }) {
   self.postMessage({ type: 'threads', n: self.crossOriginIsolated ? T.env.backends.onnx.wasm.numThreads : 1 })
   const progress = (p) => self.postMessage({ type: 'progress', p })
   tokenizer = await T.AutoTokenizer.from_pretrained(MODEL, { progress_callback: progress })
-  model = await T.StyleTextToSpeech2Model.from_pretrained(MODEL, { dtype, device, progress_callback: progress })
-  self.postMessage({ type: 'ready' })
+  try {
+    model = await T.StyleTextToSpeech2Model.from_pretrained(MODEL, { dtype, device, progress_callback: progress })
+  } catch (e) {
+    if (device === 'wasm') throw e
+    device = 'wasm'
+    model = await T.StyleTextToSpeech2Model.from_pretrained(MODEL, { dtype: 'q8', device, progress_callback: progress })
+  }
+  // the first line is always slow (shaders compile, buffers allocate): get it out of the way now
+  await speak('Ready.', 'am_puck', 1)
+  self.postMessage({ type: 'ready', device })
 }
 
 async function voiceVector(id) {
