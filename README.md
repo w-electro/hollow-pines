@@ -4,7 +4,7 @@ A browser horror game for players 13+. You explore an abandoned summer camp at n
 
 The characters are a small AI (Gemma 3 1B) running on the player's own GPU through WebGPU. There is no server: nothing a player types leaves their device.
 
-**Live:** https://w-electro.github.io/pawtales/ — needs Chrome or Edge on a computer with a decent GPU; the AI is a one-time ~750 MB download.
+**Live:** https://w-electro.github.io/hollow-pines/ — needs Chrome or Edge on a computer with a decent GPU; the AI is a one-time ~750 MB download.
 
 ## Controls
 

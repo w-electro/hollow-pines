@@ -1,4 +1,4 @@
-# Camp Hollow Pines (repo: pawtales) — working rules
+# Camp Hollow Pines (repo: hollow-pines) — working rules
 
 - **Nothing on C:.** The C: drive is full. Every download, model cache, install, build output and scratch file goes on D: (scratch work in `D:\W\_scratch\`). Point model caches at D: explicitly (Transformers.js `env.cacheDir`, `HF_HOME`); run npm with `npm_config_cache=D:/W/_scratch/.npm-cache`; Playwright drives the installed Chrome with its profile and `--disk-cache-dir` on D:.
 - **Zero budget.** Everything free and open source. No paid APIs, no paid hosting. AI runs in the player's browser (WebGPU); hosting is GitHub Pages from `main`.

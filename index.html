@@ -325,8 +325,8 @@ function clean(t, name) {
   const self = new RegExp('^' + name + '(’s|\'s)?\\s', 'i')
   const kept = t.split(/(?<=[.!?…])\s+/).filter((x) => !self.test(x))
   t = kept.length ? kept.join(' ') : t
-  // characters are kids too: no "child" or "young one" from them
-  return t.replace(/,\s*(child|young one|little one|kiddo)(?=\s*[.,!?…]|\s*$)/gi, '').replace(/\s+([.,!?])/g, '$1').trim()
+  // characters are kids too: no "child", "young one" or pet names like "darling" from them
+  return t.replace(/,\s*(child|children|young ones?|little ones?|kiddo|darling|dear|sweetie|sweetheart|honey|my dear)(?=\s*[.,!?…]|\s*$)/gi, '').replace(/\s+([.,!?])/g, '$1').trim()
 }
 
 // The conversation goes to the model as real back-and-forth turns (Player = user,

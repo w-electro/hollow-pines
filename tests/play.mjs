@@ -3,7 +3,7 @@
 // already installed, with its profile and cache on D: (the C: drive is full).
 //
 //   node tests/play.mjs                                    # local, with python serve.py running
-//   node tests/play.mjs https://w-electro.github.io/pawtales/
+//   node tests/play.mjs https://w-electro.github.io/hollow-pines/
 import { chromium } from 'playwright-core'
 
 const URL = process.argv[2] || 'http://localhost:8765/'
