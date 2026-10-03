@@ -149,7 +149,8 @@ export function makeShades(scene, { player, world, onKill }) {
       s.flash = Math.max(0, s.flash - dt)
       parts.body.material.emissive.setHex(s.flash > 0 ? 0x661111 : 0x000000)
 
-      if (dist < 1.6 && s.stun <= 0 && !lit) player.damage(12)
+      // a hit, then a step back: you always get a beat to react
+      if (dist < 1.6 && s.stun <= 0 && !lit) { player.damage(10); s.stun = 0.9; s.knock.copy(toP).multiplyScalar(-3) }
       s.hissT -= dt
       if (s.hissT <= 0 && dist < 12) { sfx.shadeHiss(); s.hissT = 3 + Math.random() * 5 }
     }

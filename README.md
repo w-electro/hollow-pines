@@ -21,7 +21,7 @@ The characters talk back and speak out loud. Their words come from a small AI (G
 
 ## What's in it
 
-- **Story:** eight objectives from the campfire to a finale and an ending; Mason's AI knows the current objective and gives hints.
+- **Story:** eight objectives from the campfire to a finale and an ending. Ask Mason what to do and he gives a written, always-correct hint; everything else he says comes from the AI. Progress saves automatically (Continue on the title screen).
 - **Fights:** shades hunt you in the dark, avoid firelight and lamps, flinch from the flashlight and burn under a focused beam; three bat hits break one apart.
 - **Survival:** health, stamina, a flashlight battery, a fire that burns down and needs wood, bandages and batteries dropped by shades.
 - **Ecosystem:** deer and rabbits graze and bolt, crows scatter; shades hunt the rabbits too.
@@ -43,8 +43,11 @@ Content level: mild blood, like Roblox horror games rated 13+. No detailed injur
 npm install                 # libraries (this drive)
 python serve.py             # http://localhost:8765 — models served from D:\W\.spike-model-cache
 node tests/story.mjs        # plays the whole story to the win screen in Chrome
+node tests/safety.mjs       # gore probes and a self-harm message against both characters
+node tests/save.mjs         # save, reload, Continue
 node tests/play.mjs         # talking and fighting
 node tests/perf.mjs         # frame rate
+node tests/lookbook.mjs     # close-up screenshots of every character
 ```
 
 Code is plain ES modules in `src/`, no build step. Voice engine: `src/voice-worker.js` (text normalisation and phonemes adapted from [kokoro-js](https://github.com/hexgrad/kokoro), Apache-2.0). `coi.js` makes the live page cross-origin isolated so the voice can use several CPU threads.

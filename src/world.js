@@ -194,6 +194,7 @@ export function buildWorld(scene) {
     }
     tree.position.set(x, 0, z)
     tree.rotation.y = rnd() * 6
+    tree.userData.tree = true
     scene.add(tree)
     occluders.push(tree)
     if (r < WORLD_RADIUS) colliders.push({ x, z, r: 0.45 })
@@ -228,6 +229,8 @@ export function buildWorld(scene) {
   const EMBERS = 70
   const emberPos = new Float32Array(EMBERS * 3)
   const emberLife = new Float32Array(EMBERS).map(() => Math.random())
+  // each ember gets its own drift, speed and spread, so they rise like sparks, not in lines
+  const emberSeed = Array.from({ length: EMBERS }, () => ({ a: Math.random() * 6.28, spin: (Math.random() - 0.5) * 4, spread: 0.2 + Math.random() * 0.9, speed: 0.3 + Math.random() * 0.5, h: 2 + Math.random() * 3 }))
   const emberGeo = new THREE.BufferGeometry()
   emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3))
   const embers = new THREE.Points(emberGeo, new THREE.PointsMaterial({ color: 0xffa040, size: 0.09, transparent: true, opacity: 0.9, depthWrite: false }))
@@ -236,12 +239,14 @@ export function buildWorld(scene) {
   let t = 0
   function update(dt) {
     for (let i = 0; i < EMBERS; i++) {
-      emberLife[i] += dt * (0.35 + (i % 5) * 0.06)
-      if (emberLife[i] > 1) emberLife[i] = fire.fuel > 0 ? 0 : 1.01
+      const e = emberSeed[i]
+      emberLife[i] += dt * e.speed
+      if (emberLife[i] > 1) { emberLife[i] = fire.fuel > 0 ? 0 : 1.01; e.a = Math.random() * 6.28 }
       const l = emberLife[i]
-      emberPos[i * 3] = Math.sin(i * 7.1 + l * 3) * (0.25 + l * 0.6)
-      emberPos[i * 3 + 1] = l > 1 ? -5 : 0.5 + l * (2.5 + fire.fuel * 2)
-      emberPos[i * 3 + 2] = Math.cos(i * 3.3 + l * 2) * (0.25 + l * 0.6)
+      const ang = e.a + l * e.spin
+      emberPos[i * 3] = Math.cos(ang) * e.spread * (0.2 + l)
+      emberPos[i * 3 + 1] = l > 1 ? -5 : 0.5 + l * e.h * (0.6 + fire.fuel * 0.6)
+      emberPos[i * 3 + 2] = Math.sin(ang) * e.spread * (0.2 + l)
     }
     emberGeo.attributes.position.needsUpdate = true
     t += dt

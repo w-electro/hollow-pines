@@ -28,6 +28,8 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; margin-right: 3p
 .title-box h1 { margin: 0 0 14px; font: 900 clamp(40px, 9vw, 76px)/.95 "Segoe UI Black", "Segoe UI", system-ui; letter-spacing: .02em;
   color: #e9e2d8; text-shadow: 0 0 30px rgba(179, 36, 31, .45), 0 3px 0 #2a0606; }
 .tag { color: var(--dim); margin: 0 0 26px; font-size: 16px; }
+.title-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+#continue + #start { background: #2a2533; box-shadow: none; }
 .controls { display: grid; grid-template-columns: repeat(2, auto); justify-content: center; gap: 8px 26px; margin: 26px 0 0; color: var(--dim); font-size: 13px; text-align: left; }
 .rating { color: var(--faint); font-size: 12px; margin-top: 22px; }
 

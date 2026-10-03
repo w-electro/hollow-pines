@@ -106,6 +106,20 @@ export function makeUI(camera) {
       el.style.left = ((tmp.x + 1) / 2) * innerWidth + 'px'
       el.style.top = ((1 - tmp.y) / 2) * innerHeight + 'px'
     }
+    // two characters talking side by side: stack their bubbles instead of overlapping them
+    const shown = [...bubbleEls.values()].filter((e) => e.style.display === 'block')
+    if (shown.length > 1) {
+      const rects = shown.map((e) => ({ e, r: e.getBoundingClientRect() })).sort((a, b) => b.r.bottom - a.r.bottom)
+      for (let i = 1; i < rects.length; i++) {
+        const lower = rects[i - 1].r, cur = rects[i].r
+        const overlapX = cur.left < lower.right && cur.right > lower.left
+        if (overlapX && cur.bottom > lower.top - 6) {
+          const shift = cur.bottom - lower.top + 6
+          rects[i].e.style.top = parseFloat(rects[i].e.style.top) - shift + 'px'
+          rects[i].r = rects[i].e.getBoundingClientRect()
+        }
+      }
+    }
   }
 
   ui.page = (title, text) => { $('page-title').textContent = title; $('page-text').textContent = text; ui.show('page') }

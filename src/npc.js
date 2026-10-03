@@ -14,6 +14,13 @@ export function makeNPCs(scene) {
     name: 'Mason',
     mesh: makeAvatar({ skin: 0xe8b88a, shirt: 0x4b5563, pants: 0x1f2937, face: 'scared', hood: 0x374151 }),
     persona: 'Mason is 13 and came back to the abandoned Camp Hollow Pines to find his older brother Silas, who vanished here years ago. He is a scared teenager, not an adult: he talks like a kid, whispers, jumps at noises, knows the camp legends, and is sure Silas is still alive out in the woods. He believes the shadows (the Shades) are afraid of light. He is kind to the Player and grateful for the help.',
+    maxSentences: 2,
+    // hidden example exchanges: small models copy examples far better than they follow rules
+    examples: [
+      ['who are you?', "I'm Mason. I came back here for my brother... please, keep your voice down."],
+      ['what should i do?', "Keep the fire going, okay? When it goes dark, they come closer."],
+      ['are you scared?', "Of course I'm scared. But Silas would come for me, so I'm not leaving without him."],
+    ],
     voice: { id: 'am_puck', speed: 1.05, fx: { rate: 0.93, reverb: 0.3, lowpass: 6500 } },
     turns: [],
     safe: ["I don't want to talk about that. Not here, not in the dark.", "Stop. Some things in this camp you don't say out loud.", "Don't ask me that. Just... help me find Silas.",
@@ -27,6 +34,11 @@ export function makeNPCs(scene) {
     name: 'Silas',
     mesh: makeAvatar({ skin: 0x8f877e, shirt: 0x15171c, pants: 0x0d0e11, face: 'mask', hood: 0x0f1013, scale: 1.22 }),
     persona: 'Silas is the masked figure in the woods: Mason\'s older brother, who has been lost in Camp Hollow Pines for years and keeps the Shades away from his little brother. He never explains himself and never narrates. He speaks in first person, in a low whisper, 1 to 6 words, cryptic and creepy. Examples: Mason... where are you. | You should not be here. | The light. Keep it burning. | They are coming.',
+    maxSentences: 1,
+    examples: [
+      ['who are you?', 'Not who you think.'],
+      ['where is mason?', 'Keep him in the light.'],
+    ],
     voice: { id: 'am_onyx', speed: 0.85, fx: { rate: 0.72, reverb: 0.55, drive: 30, lowpass: 3200, echo: 0.28 } },
     turns: [],
     safe: ['Not for you.', 'Leave. Now.', 'Mason...?', 'Go back to the fire.', 'You ask too much.', 'Turn around.'],

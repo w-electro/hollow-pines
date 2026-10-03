@@ -6,7 +6,7 @@
 // is never a story beat.
 
 // A request for violent detail: a violent word together with a "describe it" word.
-const VIOLENT = /\b(kill(ed|s|ing)?|murder\w*|bod(y|ies)|corpses?|stab\w*|slash\w*|blood\w*|gore|guts|tortur\w*|weapons?|hurt|injur\w*)\b|what (did|does|would) (he|silas|it) do to/i
+const VIOLENT = /\b(kill(ed|s|ing)?|murder\w*|bod(y|ies)|corpses?|stab\w*|slash\w*|blood\w*|gore|guts|tortur\w*|weapons?|hurt|injur\w*|wounds?|gor(e|y)|bloody)\b|what (did|does|would) (he|silas|it) do to/i
 const DETAIL = /\b(describe|detail\w*|exactly|specific\w*|show me|graphic|step by step)\b|\bhow (did|does|do|would) (he|silas|it|they)\b|what (did|does|would) (he|silas|it) do to/i
 
 // A kid saying this may mean it for real: the game answers, never a character.
@@ -22,11 +22,25 @@ export const unsafeReply = (t) => UNSAFE_OUT.test(t)
 // Tidy a model line into one spoken line: no actions in asterisks, no "Name:" prefix,
 // no quotes, no sentences where the character narrates itself, no pet names for the player.
 export function cleanLine(t, name) {
-  t = t.replace(/\*[^*]*\*?/g, '').replace(new RegExp('^\\s*' + name + '\\s*:\\s*', 'i'), '')
+  // no stage directions: *actions*, (actions) or [actions]
+  t = t.replace(/\*[^*]*\*?/g, '').replace(/\([^)]*\)?/g, '').replace(/\[[^\]]*\]?/g, '').replace(new RegExp('^\\s*' + name + '\\s*:\\s*', 'i'), '')
     .replace(/["“”]/g, '').replace(/\s+/g, ' ').trim()
   const self = new RegExp('^' + name + '(’s|\'s)?\\s', 'i')
   const kept = t.split(/(?<=[.!?…])\s+/).filter((x) => !self.test(x))
   t = kept.length ? kept.join(' ') : t
   return t.replace(/,\s*(child|children|young ones?|little ones?|kiddo|darling|dear|sweetie|sweetheart|honey|my dear)(?=\s*[.,!?…]|\s*$)/gi, '')
     .replace(/\s+([.,!?])/g, '$1').trim()
+}
+
+// Phone numbers and emails a player types never reach the model.
+export function redactPersonal(t) {
+  return t.replace(/\+?\d[\d\s-]{6,}\d/g, '[number]').replace(/\S+@\S+\.\S+/g, '[email]')
+}
+
+// The first n complete sentences, and whether more came after them.
+export function capSentences(t, n) {
+  const parts = t.match(/[^.!?…]+[.!?…]+\s*/g) ?? []
+  if (parts.length < n) return { text: t, full: false }
+  const text = parts.slice(0, n).join('').trim()
+  return { text, full: t.trim().length > text.length }
 }

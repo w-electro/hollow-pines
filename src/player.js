@@ -99,6 +99,7 @@ export function makePlayer(scene, camera, dom, start) {
 
   let stepT = 0
   const ray = new THREE.Raycaster()
+  let hiddenTrees = new Set()
   p.update = (dt, colliders, occluders = []) => {
     p.attackCd = Math.max(0, p.attackCd - dt)
     p.invuln = Math.max(0, p.invuln - dt)
@@ -144,12 +145,31 @@ export function makePlayer(scene, camera, dom, start) {
       target.x - Math.sin(p.yaw) * Math.cos(p.pitch) * p.dist,
       target.y + Math.sin(p.pitch) * p.dist,
       target.z - Math.cos(p.yaw) * Math.cos(p.pitch) * p.dist)
-    // pull the camera in if a tree or a cabin is in the way
+    // something between the camera and the player: trees step aside (hidden, like Roblox
+    // does), buildings pull the camera in
     const back = cp.clone().sub(target)
     const want = back.length()
     ray.set(target, back.normalize())
     ray.far = want
-    const hit = ray.intersectObjects(occluders, true)[0]
+    const blockers = new Set()
+    let hit = null
+    for (const h of ray.intersectObjects(occluders, true)) {
+      let o = h.object
+      while (o.parent && !o.userData.tree && !o.userData.building) o = o.parent
+      if (o.userData.tree) blockers.add(o)
+      else if (!hit) hit = h
+    }
+    // and trees whose branches reach into the view: anything within ~2 m of the line from
+    // the camera to the player (a pine is wide; the exact line misses it but the screen doesn't)
+    const sx = target.x - cp.x, sz = target.z - cp.z, len2 = sx * sx + sz * sz
+    for (const o of occluders) {
+      if (!o.userData.tree) continue
+      const k = Math.max(0, Math.min(1, ((o.position.x - cp.x) * sx + (o.position.z - cp.z) * sz) / len2))
+      if (Math.hypot(o.position.x - (cp.x + k * sx), o.position.z - (cp.z + k * sz)) < 2.1) blockers.add(o)
+    }
+    for (const t of hiddenTrees) if (!blockers.has(t)) t.visible = true
+    for (const t of blockers) t.visible = false
+    hiddenTrees = blockers
     if (hit) cp.copy(target).addScaledVector(back, Math.max(1.6, hit.distance - 0.4))
     camera.position.lerp(cp, 1 - Math.exp(-dt * (hit ? 18 : 10)))
     camera.lookAt(target)

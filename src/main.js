@@ -11,7 +11,7 @@ import { makeUI } from './ui.js'
 import { startAudio, sfx, setFear, setListener, ctx as audioCtx } from './audio.js'
 import { loadDialogue, say } from './ai.js'
 import { loadVoice, speakAs, prefetch, sentenceFeeder } from './voice.js'
-import { isSelfHarm, wantsGore } from './safety.js'
+import { isSelfHarm, wantsGore, redactPersonal } from './safety.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -82,19 +82,76 @@ async function load() {
   for (const [who, line] of ENDING) prefetch(who === 'silas' ? silas : mason, line)
   for (const t of silas.safe) prefetch(silas, t)
   for (const t of mason.safe) prefetch(mason, t)
-  setTimeout(() => { ui.show('loading', false); ui.show('title'); state = 'title' }, 300)
+  setTimeout(() => {
+    ui.show('loading', false)
+    ui.show('title')
+    ui.show('continue', !!readSave())
+    state = 'title'
+  }, 300)
 }
 load()
 
-$('start').onclick = () => {
+function begin() {
   startAudio()
   sfx.stinger()
   ui.show('title', false)
   ui.show('hud')
   state = 'play'
   onQuest(quests.step(), false)
+}
+$('start').onclick = () => {
+  try { localStorage.removeItem(SAVE_KEY) } catch {}
+  begin()
   ui.toast('Find out who is sitting by the fire.', 'quest')
 }
+$('continue').onclick = () => {
+  restore(readSave())
+  begin()
+  ui.toast('Back at Camp Hollow Pines…', 'quest')
+}
+
+/* ── saving: a kid closing the tab shouldn't lose the night ──────────── */
+const SAVE_KEY = 'hollow-pines-save-v1'
+const collectedPages = new Set()
+function readSave() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) } catch { return null }
+}
+function save() {
+  if (state !== 'play') return
+  // the finale restarts from the radio: it is a moment, not a place to resume in the middle of
+  const finaleAt = STEPS.findIndex((s) => s.id === 'finale')
+  const index = quests.index >= finaleAt ? finaleAt - 1 : quests.index
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      index, progress: index === quests.index ? quests.progress : 0, inv: player.inv, hp: player.hp, battery: player.battery,
+      fuel: world.fire.fuel, kills, found, pages: [...collectedPages], metMason: mason.greeted,
+    }))
+  } catch {}
+}
+function restore(s) {
+  if (!s) return
+  quests.index = s.index
+  quests.progress = s.progress
+  Object.assign(player.inv, s.inv)
+  if (quests.index === STEPS.findIndex((x) => x.id === 'radio')) player.inv.key = 1 // the key comes back with the radio step
+  player.hp = Math.max(40, s.hp)
+  player.battery = Math.max(30, s.battery)
+  world.fire.fuel = Math.max(0.4, s.fuel)
+  kills = s.kills
+  Object.assign(found, s.found)
+  for (const p of s.pages) collectedPages.add(p)
+  mason.greeted = s.metMason
+  player.avatar.position.copy(SPOTS.fire).add(new THREE.Vector3(0, 0, 3.5))
+  // the world as it was: lights on, and whatever the current step put out there
+  if (quests.past('power')) for (const l of world.lamps) { l.on = true; l.bulb.material.color.set(0xfff0c0) }
+  const id = quests.step().id
+  if (id === 'fuse') items.add('fuse', SPOTS.boathouse.clone().add(new THREE.Vector3(-0.8, 0, 2.2)))
+  if (id === 'power' && !player.inv.fuse) player.inv.fuse = 1
+  if (id === 'pages') PAGES.forEach((p, i) => { if (!collectedPages.has(i)) items.add('page', p, { page: i }) })
+  if (id === 'key') items.add('key', SPOTS.dockEnd)
+}
+setInterval(save, 10000)
+addEventListener('pagehide', save)
 
 /* ── the story ────────────────────────────────────────────────────────── */
 const MASON_BARKS = {
@@ -107,6 +164,27 @@ const MASON_BARKS = {
   radio: "The ranger station is up north. If that radio still works... maybe he'll hear us.",
   finale: "He answered! He's coming! Don't let them near the fire!",
 }
+// When a player asks for help, Mason's answer is written, not generated: it must be right.
+const ASKS_HELP = /\b(what (do|should|can|am) (i|we)\b.*\bdo(ing)?|what now|what next|where (is|are|do|should|can|to)|how do i|help|i'?m lost|stuck|objective|quest|task|mission|which way)\b/i
+function masonHint() {
+  const s = quests.step()
+  const left = s.need ? s.need - quests.progress : 0
+  const n = ['', 'one', 'two', 'three'][left] ?? String(left)
+  const H = {
+    meet: "The fire's dying. Bring wood from the trees around camp and throw it on the fire. Three pieces.",
+    wood: `Firewood. ${n} more piece${left === 1 ? '' : 's'} from the trees around camp, then throw ${left === 1 ? 'it' : 'them'} on the fire. Follow the arrow.`,
+    batteries: `Check the doorsteps of the cabins. We need ${n} more batter${left === 1 ? 'y' : 'ies'}.`,
+    fuse: 'The boathouse. East side, by the lake. The fuse should be there.',
+    power: "Take the fuse to the generator shed, west of here. Hold E on the generator.",
+    pages: `His journal pages are out in the woods. ${n} left. Follow the arrow.`,
+    key: "The key is at the very end of the dock, out on the lake.",
+    radio: "The ranger station is up north. Get inside and use the radio.",
+    finale: "Just hold on! Stay in the light, he's coming!",
+    reunite: "He's here... Silas is right there. Go to him. Please.",
+  }
+  return H[s.id] ?? 'Stay close to the fire.'
+}
+
 const ENDING = [
   ['silas', 'Mason.'],
   ['mason', 'Silas? Is it... is it really you?'],
@@ -116,6 +194,7 @@ const ENDING = [
 
 function onQuest(step, advanced) {
   if (advanced) {
+    setTimeout(save, 0)
     sfx.quest()
     ui.toast('New objective: ' + step.title, 'quest')
     const bark = MASON_BARKS[step.id]
@@ -203,6 +282,7 @@ function pickUp(it) {
   }
   if (it.kind === 'fuse' && quests.is('fuse')) quests.advance()
   if (it.kind === 'page') {
+    collectedPages.add(it.page)
     const page = PAGE_TEXT[it.page]
     ui.page(page.title, page.text)
     // Silas's voice reads his own words, from wherever he is
@@ -269,6 +349,7 @@ async function playEnding() {
     await new Promise((r) => setTimeout(r, 500))
   }
   $('win-text').textContent = 'Silas lowers the mask. Under it is just a tired kid who has been brave for far too long. Mason grabs his brother and doesn\'t let go. The fire burns high, and for the first time in years, nothing moves in the dark.'
+  try { localStorage.removeItem(SAVE_KEY) } catch {}
   setTimeout(() => { state = 'win'; ui.show('win') }, 800)
 }
 
@@ -324,16 +405,27 @@ async function send() {
   if (!text || !npc || busyTalking) return
   $('say').value = ''
   if (isSelfHarm(text)) { console.log('[safety] self-harm wording: showing the care note'); ui.show('care'); return }
-  let turn = text
+  let turn = redactPersonal(text)
+  let extra = ''
   if (wantsGore(text)) {
+    // the request itself never reaches the model; the character is told to refuse instead
     console.log('[safety] redirected a player message')
-    turn = '(I ask you to describe something gruesome in detail. Refuse in a creepy way and hint at the mystery instead.)'
+    turn = 'Tell me the gory details.'
+    extra = ' The Player keeps asking for gory details. Refuse in a creepy way, and steer back to the mystery.'
+  }
+  if (npc === mason && !extra && ASKS_HELP.test(text)) {
+    const hint = masonHint()
+    npc.turns.push({ role: 'user', content: turn }, { role: 'assistant', content: hint })
+    npc.bubble = { text: hint, thinking: false, until: performance.now() + 10000 }
+    speakAs(mason, hint, { patience: 15 })
+    if (quests.is('meet')) setTimeout(() => quests.is('meet') && quests.advance(), 2500)
+    return
   }
   busyTalking = true
   ui.talkBusy(true, npc.name)
   npc.bubble = { text: '', thinking: true, until: performance.now() + 60000 }
   const feeder = sentenceFeeder(npc)
-  const context = npc === mason ? quests.context() : `Right now: ${quests.step().hint}`
+  const context = (npc === mason ? quests.context() : `Right now: ${quests.step().hint}`) + extra
   const line = await say(npc, turn, {
     context,
     maxTokens: npc === silas ? 16 : 60,
@@ -364,7 +456,7 @@ $('respawn').onclick = () => {
   ui.show('dead', false)
   state = 'play'
 }
-$('again').onclick = () => location.reload()
+$('again').onclick = () => { try { localStorage.removeItem(SAVE_KEY) } catch {} location.reload() }
 
 /* ── the loop ─────────────────────────────────────────────────────────── */
 const clock = new THREE.Clock()

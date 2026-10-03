@@ -41,6 +41,7 @@ await G(() => { window.__game.player.damage = () => {} })
 // count voice lines as they play
 await G(() => { window.__spoke = []; setInterval(() => { for (const n of window.__game.npcs.all) if (n.speaking && window.__spoke.at(-1) !== n.id) window.__spoke.push(n.id) }, 100) })
 
+console.log('isolated (multi-threaded voice):', await G(() => crossOriginIsolated))
 console.log('step:', await step())
 await G(() => window.__game.teleport(2.4, 5.2))
 await wait(8000)
