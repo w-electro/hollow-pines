@@ -1,0 +1,18 @@
+{
+  "name": "pawtales",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Camp Hollow Pines — a browser horror game whose characters are a small AI running on the player's own GPU.",
+  "type": "module",
+  "scripts": {
+    "dev": "python serve.py",
+    "play": "node tests/play.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

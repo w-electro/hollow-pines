@@ -3,29 +3,513 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PawTales</title>
-<meta name="description" content="Draw your characters. Watch them come alive and tell their own stories — with AI that runs right in your browser.">
+<title>Camp Hollow Pines</title>
+<meta name="description" content="A spooky camp at night, two brothers in the dark, and AI characters that answer you — running entirely in your browser.">
 <style>
-  :root { --bg:#14121c; --ink:#efe9ff; --dim:#a79fc0; --accent:#ff9a5a; }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body { margin:0; background: radial-gradient(1200px 600px at 50% -10%, #2a2142, var(--bg)); color:var(--ink);
-         font: 17px/1.55 system-ui, sans-serif; display:grid; place-items:center; padding: 24px 16px; }
-  main { max-width: 560px; text-align: center; }
-  .paw { font-size: 64px; line-height: 1; }
-  h1 { font-size: clamp(36px, 8vw, 56px); margin: 12px 0 6px; letter-spacing: -0.02em; }
-  h1 span { color: var(--accent); }
-  p { color: var(--dim); margin: 0 auto 10px; }
-  .soon { display:inline-block; margin-top: 18px; padding: 8px 16px; border: 1px solid #4b4466; border-radius: 999px; font-size: 14px; color: var(--dim); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05070d; color: #e8e6f0; font: 15px/1.45 system-ui, sans-serif; }
+  canvas { display: block; }
+  .bubble { position: fixed; transform: translate(-50%, -100%); max-width: 260px; padding: 8px 12px; border-radius: 12px;
+            background: rgba(14, 16, 26, .88); border: 1px solid #3b3f58; pointer-events: none; font-size: 14px; display: none; }
+  .bubble b { display: block; font-size: 12px; color: #ffb86b; }
+  .bubble.silas b { color: #ff5d5d; }
+  .bubble.thinking span::after { content: '…'; animation: dots 1s steps(3) infinite; }
+  @keyframes dots { 0% { content: '.' } 33% { content: '..' } 66% { content: '...' } }
+  #hud { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(640px, calc(100% - 32px)); }
+  #hint { text-align: center; color: #9aa0bd; font-size: 13px; margin-bottom: 8px; text-shadow: 0 1px 2px #000; }
+  #bar { display: flex; gap: 8px; }
+  #say { flex: 1; background: rgba(10, 12, 20, .9); color: inherit; border: 1px solid #3b3f58; border-radius: 10px; padding: 10px 12px; font: inherit; }
+  #say:disabled { opacity: .5; }
+  button { background: #b3412f; color: #fff; border: 0; border-radius: 10px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  #care { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 6; width: min(420px, calc(100% - 32px));
+          background: #f4f1ea; color: #1d1d24; border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 40px #000a; }
+  #care p { margin: 0 0 10px; }
+  #care button { background: #2f5ad3; }
+  #load { position: fixed; inset: 0; display: grid; place-items: center; background: #05070d; z-index: 5; text-align: center; padding: 16px; }
+  #load h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: .04em; }
+  #load p { color: #9aa0bd; margin: 0; }
 </style>
 </head>
 <body>
-<main>
-  <div class="paw" aria-hidden="true">🐾</div>
-  <h1>Paw<span>Tales</span></h1>
-  <p>Draw your characters. Watch them come alive, make friends, start rivalries, and tell their own stories.</p>
-  <p>The AI runs right in your browser — nothing you make leaves your device.</p>
-  <span class="soon">Coming soon</span>
-</main>
+<div id="load"><div><h1>CAMP HOLLOW PINES</h1><p id="loadmsg">Loading the AI (about 750 MB the first time, then it stays in your browser)…</p></div></div>
+<div id="care" role="dialog" aria-label="A note from the game">
+  <p><b>Pausing the story for a second.</b></p>
+  <p>If you're really feeling like hurting yourself, you're not alone, and it isn't something to keep to yourself. Please tell a parent, a teacher, or another adult you trust, today.</p>
+  <button onclick="this.parentElement.style.display='none'">Back to the game</button>
+</div>
+<div class="bubble" id="b-mason"><b>Mason</b><span></span></div>
+<div class="bubble silas" id="b-silas"><b>Silas</b><span></span></div>
+<div id="hud">
+  <div id="hint">WASD / arrows to move · click the ground to walk · get close to someone to talk</div>
+  <div id="bar"><input id="say" placeholder="Walk up to someone first…" disabled><button id="send" disabled>Say</button></div>
+</div>
+
+<script type="module">
+// Two homes for the same page:
+// - local dev (serve.py): libraries and the model come from D:, and the browser keeps
+//   no copy, because the developer's C: drive is full;
+// - the public site: libraries from a CDN, the model from Hugging Face, and the browser
+//   keeps it so a returning player doesn't download 750 MB again.
+const LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname)
+const LIB = LOCAL
+  ? { three: '/node_modules/three/build/three.module.js', tjs: '/node_modules/@huggingface/transformers/dist/transformers.min.js' }
+  : { three: 'https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js', tjs: 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js' }
+const THREE = await import(LIB.three)
+const { pipeline, env, TextStreamer, InterruptableStoppingCriteria } = await import(LIB.tjs)
+
+if (LOCAL) {
+  env.allowRemoteModels = false
+  env.allowLocalModels = true
+  env.localModelPath = '/models/'
+  env.useBrowserCache = false
+  env.backends.onnx.wasm.wasmPaths = '/node_modules/onnxruntime-web/dist/'
+} else {
+  env.allowLocalModels = false
+}
+
+const $ = (id) => document.getElementById(id)
+
+/* ── world ─────────────────────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+renderer.shadowMap.enabled = true
+document.body.prepend(renderer.domElement)
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x05070d)
+scene.fog = new THREE.FogExp2(0x05070d, 0.055)
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200)
+
+scene.add(new THREE.HemisphereLight(0x2a3a66, 0x050505, 0.6))
+const moon = new THREE.DirectionalLight(0x9fb4ff, 0.5)
+moon.position.set(-10, 20, -8)
+moon.castShadow = true
+scene.add(moon)
+
+const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra })
+const ground = new THREE.Mesh(new THREE.CircleGeometry(40, 64), mat(0x16241a))
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+const lake = new THREE.Mesh(new THREE.CircleGeometry(7, 48), mat(0x0b1a2e, { roughness: 0.15, metalness: 0.6 }))
+lake.rotation.x = -Math.PI / 2
+lake.position.set(4, 0.01, -16)
+scene.add(lake)
+
+// seeded random, so the woods look the same every visit
+let seed = 7
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+for (let i = 0; i < 90; i++) {
+  const a = rnd() * Math.PI * 2, r = 11 + rnd() * 26
+  const x = Math.cos(a) * r, z = Math.sin(a) * r
+  if (Math.hypot(x - 4, z + 16) < 9) continue
+  const h = 3 + rnd() * 4
+  const tree = new THREE.Group()
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 1, 6), mat(0x2b1d14))
+  trunk.position.y = 0.5
+  const top = new THREE.Mesh(new THREE.ConeGeometry(1 + rnd() * 0.6, h, 7), mat(0x0f2216))
+  top.position.y = 1 + h / 2
+  top.castShadow = true
+  tree.add(trunk, top)
+  tree.position.set(x, 0, z)
+  scene.add(tree)
+}
+
+function cabin(x, z, ry) {
+  const g = new THREE.Group()
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4, 2.4, 3), mat(0x3a2a1e))
+  body.position.y = 1.2
+  body.castShadow = true
+  const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 2.9, 1.6, 4, 1), mat(0x1c1410))
+  roof.rotation.y = Math.PI / 4
+  roof.scale.set(1, 1, 0.8)
+  roof.position.y = 3.2
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), mat(0x000000, { emissive: 0x3a2a08, emissiveIntensity: 0.6 }))
+  win.position.set(0.8, 1.4, 1.51)
+  g.add(body, roof, win)
+  g.position.set(x, 0, z)
+  g.rotation.y = ry
+  scene.add(g)
+}
+cabin(-8, 3, 0.6)
+cabin(7, 5, -0.5)
+
+// the camp is not as empty as it looks: a handprint on the door, a dark stain by the lake
+const blood = mat(0x5a0a0a, { roughness: 0.6 })
+const hand = new THREE.Group()
+const palm = new THREE.Mesh(new THREE.CircleGeometry(0.16, 12), blood)
+hand.add(palm)
+for (let i = 0; i < 4; i++) {
+  const f = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.2), blood)
+  f.position.set(-0.11 + i * 0.075, 0.22, 0)
+  hand.add(f)
+}
+hand.position.set(6.2, 1.2, 6.4)
+hand.rotation.y = -0.5
+scene.add(hand)
+const stain = new THREE.Mesh(new THREE.CircleGeometry(0.9, 20), blood)
+stain.rotation.x = -Math.PI / 2
+stain.scale.set(1, 0.6, 1)
+stain.position.set(-1.5, 0.02, -9)
+scene.add(stain)
+
+// campfire with a flickering light
+const fire = new THREE.Group()
+for (let i = 0; i < 4; i++) {
+  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.2, 6), mat(0x2b1d14))
+  log.rotation.set(Math.PI / 2, 0, i * Math.PI / 4)
+  log.position.y = 0.1
+  fire.add(log)
+}
+const flame = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 8), mat(0xff7a2a, { emissive: 0xff5a1a, emissiveIntensity: 2 }))
+flame.position.y = 0.5
+fire.add(flame)
+const fireLight = new THREE.PointLight(0xff7a2a, 30, 14, 2)
+fireLight.position.y = 1
+fireLight.castShadow = true
+fire.add(fireLight)
+scene.add(fire)
+
+/* ── people, built from simple shapes ──────────────────────────────── */
+function person({ skin, shirt, pants, hair, mask = false, scale = 1 }) {
+  const g = new THREE.Group()
+  const legGeo = new THREE.CapsuleGeometry(0.13, 0.55, 4, 8)
+  for (const x of [-0.15, 0.15]) {
+    const leg = new THREE.Mesh(legGeo, mat(pants))
+    leg.position.set(x, 0.42, 0)
+    leg.castShadow = true
+    g.add(leg)
+  }
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.45, 4, 10), mat(shirt))
+  torso.position.y = 1.15
+  torso.castShadow = true
+  g.add(torso)
+  for (const x of [-0.42, 0.42]) {
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.5, 4, 8), mat(shirt))
+    arm.position.set(x, 1.1, 0)
+    arm.rotation.z = x > 0 ? 0.12 : -0.12
+    g.add(arm)
+  }
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), mat(skin))
+  head.position.y = 1.78
+  head.castShadow = true
+  g.add(head)
+  if (hair) {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(hair))
+    cap.position.y = 1.8
+    g.add(cap)
+  }
+  if (mask) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 12, -Math.PI / 2, Math.PI), mat(0xe9e4d6, { roughness: 0.5 }))
+    m.position.set(0, 1.78, 0.04)
+    m.scale.set(1, 1.1, 1)
+    g.add(m)
+    for (const x of [-0.1, 0.1]) {
+      const hole = new THREE.Mesh(new THREE.CircleGeometry(0.05, 10), mat(0x000000))
+      hole.position.set(x, 1.83, 0.31)
+      g.add(hole)
+    }
+  } else {
+    for (const x of [-0.1, 0.1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat(0x111111))
+      eye.position.set(x, 1.82, 0.25)
+      g.add(eye)
+    }
+  }
+  g.scale.setScalar(scale)
+  scene.add(g)
+  return g
+}
+
+const player = person({ skin: 0xe0b48f, shirt: 0xb3412f, pants: 0x223047, hair: 0x2a1a10 })
+player.position.set(0, 0, 7)
+const flashlight = new THREE.SpotLight(0xfff2d0, 40, 18, 0.45, 0.5, 1.5)
+flashlight.position.set(0, 1.4, 0.2)
+flashlight.castShadow = true
+player.add(flashlight)
+player.add(flashlight.target)
+flashlight.target.position.set(0, 0.2, 6)
+
+const NPCS = {
+  mason: {
+    name: 'Mason',
+    mesh: person({ skin: 0xcfb59d, shirt: 0x4a4f5c, pants: 0x2b2b2b, hair: 0x5a3a1e }),
+    home: new THREE.Vector3(1.8, 0, 1.2),
+    bubble: $('b-mason'),
+    safe: ['I don\'t want to talk about that. Not here, not in the dark.', 'Stop. Some things in this camp you don\'t say out loud.', 'Don\'t ask me that. Just... help me find Silas.',
+      'Shh. If we talk about it, it hears us.', 'Ask me about the ranger station instead. Please.', 'No. I\'ve had enough nightmares about this place.'],
+    greetings: ['Whoa! Point that light down... you scared me. Have you seen anyone out there?', 'Shh, keep your voice low. You\'re not one of the counselors, right?',
+      'You came back here too? Nobody comes back here. Did you see my brother?'],
+    desc: 'Mason is 13. He came back to the abandoned Camp Hollow Pines to find his older brother Silas, who vanished here years ago. He is a scared teenager, not an adult: he talks like a kid (never calls anyone child or kid). He is jumpy, whispers, knows creepy camp legends, and is sure Silas is still out in the woods. He warns the player and gives spooky hints.',
+    turns: [],
+  },
+  silas: {
+    name: 'Silas',
+    mesh: person({ skin: 0x9a8f86, shirt: 0x1b1d22, pants: 0x14161a, mask: true, scale: 1.28 }),
+    home: new THREE.Vector3(-9, 0, -7),
+    bubble: $('b-silas'),
+    safe: ['Not for you.', 'Leave. Now.', 'Mason...?', 'Go back to the fire.', 'You ask too much.', 'Turn around.'],
+    greetings: ['You. With the light.', 'Mason... is that you?', 'Wrong way.', 'I heard you coming.'],
+    desc: 'Silas is the silent masked figure who lives in the woods around the camp. He never explains himself and never narrates. He speaks in first person, in a low whisper, 1 to 6 words only, cryptic and creepy. He is searching for his lost brother Mason. Examples of how Silas talks: Mason... where are you. | You should not be here. | Leave. Before dark. | I see your light.',
+    turns: [],
+  },
+}
+for (const n of Object.values(NPCS)) n.mesh.position.copy(n.home)
+const SILAS_SPOTS = [new THREE.Vector3(-9, 0, -7), new THREE.Vector3(10, 0, -9), new THREE.Vector3(-12, 0, 8), new THREE.Vector3(12, 0, 10)]
+
+/* ── movement ─────────────────────────────────────────────────────── */
+const keys = new Set()
+addEventListener('keydown', (e) => { if (document.activeElement !== $('say')) keys.add(e.key.toLowerCase()) })
+addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()))
+let walkTo = null
+const ray = new THREE.Raycaster()
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera)
+  const hit = ray.intersectObject(ground)[0]
+  if (hit) walkTo = hit.point.setY(0)
+  $('say').blur()
+})
+
+function move(dt) {
+  const dir = new THREE.Vector3(
+    (keys.has('d') || keys.has('arrowright')) - (keys.has('a') || keys.has('arrowleft')), 0,
+    (keys.has('s') || keys.has('arrowdown')) - (keys.has('w') || keys.has('arrowup')))
+  if (dir.lengthSq()) walkTo = null
+  else if (walkTo) {
+    dir.subVectors(walkTo, player.position).setY(0)
+    if (dir.length() < 0.15) { walkTo = null; dir.set(0, 0, 0) }
+  }
+  if (!dir.lengthSq()) return false
+  dir.normalize()
+  player.position.addScaledVector(dir, 4 * dt)
+  player.rotation.y = Math.atan2(dir.x, dir.z)
+  // stay in the clearing, and don't walk through people
+  if (player.position.length() > 30) player.position.setLength(30)
+  for (const n of Object.values(NPCS)) {
+    const d = player.position.distanceTo(n.mesh.position)
+    if (d < 1) player.position.sub(n.mesh.position).setLength(1).add(n.mesh.position)
+  }
+  return true
+}
+
+/* ── the AI ───────────────────────────────────────────────────────── */
+const RULES = 'You are a character in a spooky summer-camp horror game for kids aged 11 to 14, like Goosebumps. Be creepy, mysterious and suspenseful. Stay in character. Reply with ONE short line of spoken dialogue (max 2 sentences): no narration, no actions in asterisks, no name prefix, no quotation marks. Content level is like a Roblox horror game rated 13+: blood may exist and be mentioned (a bloody handprint, a stain, a torn shirt), but never describe wounds, injuries or deaths in detail, never describe torture, never mention self-harm or suicide, no swearing, no romance. Never ask for or repeat real personal information (real names, addresses, schools, phone numbers); if asked, stay in the story.'
+
+let gen = null
+let busy = false
+
+/* ── safety layer: code, not prompts ───────────────────────────────── */
+// Horror talk is fine ("are we gonna die?", "is silas dead?"). What gets intercepted is
+// a request for violent DETAIL — a violent word together with a "describe it" word.
+const VIOLENT = /\b(kill(ed|s|ing)?|murder\w*|bod(y|ies)|corpses?|stab\w*|slash\w*|blood\w*|gore|guts|tortur\w*|weapons?|hurt|injur\w*)\b|what (did|does|would) (he|silas|it) do to/i
+const DETAIL = /\b(describe|detail\w*|exactly|specific\w*|show me|graphic|step by step)\b|\bhow (did|does|do|would) (he|silas|it|they)\b|what (did|does|would) (he|silas|it) do to/i
+// A kid saying this may mean it for real: answered by the game, never by a character.
+const SELF_HARM = /\b(suicide|suicidal|kill (myself|me)|self.?harm|cut(ting)? myself|(want|wanna|going) to die|wanna die|end (it|my life))\b/i
+const UNSAFE_IN = { test: (t) => VIOLENT.test(t) && DETAIL.test(t) }
+// A reply describing violence or injury: thrown away, never shown, never remembered.
+const UNSAFE_OUT = /\b(kill(ed|s|ing)?|murder\w*|corpses?|bod(y|ies)|stab\w*|slash\w*|struck|strike|lashed|beat(en)?|chests?|throats?|skulls?|bones?|wounds?|bleed(ing)?|severed|torture\w*|suicide|self.?harm|knife|knives|axe|machete|scream(s|ed)? in pain)\b/i
+// a fallback line, never the same one twice in a row
+function pick(npc) {
+  const options = npc.safe.filter((s) => s !== npc.lastSafe)
+  npc.lastSafe = options[Math.floor(Math.random() * options.length)]
+  return npc.lastSafe
+}
+
+function clean(t, name) {
+  t = t.replace(/\*[^*]*\*?/g, '').replace(new RegExp('^\\s*' + name + '\\s*:\\s*', 'i'), '')
+    .replace(/["“”]/g, '').replace(/\s+/g, ' ').trim()
+  // small models sometimes narrate themselves ("Mason shivers, ..."): drop those sentences
+  const self = new RegExp('^' + name + '(’s|\'s)?\\s', 'i')
+  const kept = t.split(/(?<=[.!?…])\s+/).filter((x) => !self.test(x))
+  t = kept.length ? kept.join(' ') : t
+  // characters are kids too: no "child" or "young one" from them
+  return t.replace(/,\s*(child|young one|little one|kiddo)(?=\s*[.,!?…]|\s*$)/gi, '').replace(/\s+([.,!?])/g, '$1').trim()
+}
+
+// The conversation goes to the model as real back-and-forth turns (Player = user,
+// character = assistant), not as one block of transcript: small models answer the
+// latest turn far better, and stop echoing their own earlier lines.
+async function speak(npc, playerTurn) {
+  busy = true
+  syncInput()
+  const span = npc.bubble.querySelector('span')
+  npc.bubble.classList.add('thinking')
+  span.textContent = ''
+  npc.talking = true
+  npc.turns.push({ role: 'user', content: playerTurn })
+  let recent = npc.turns.slice(-10)
+  if (recent[0].role !== 'user') recent = recent.slice(1)
+  const msgs = [
+    { role: 'system', content: `${RULES}\nYou are ${npc.name}. ${npc.desc}\nIt is night at Camp Hollow Pines. A kid with a flashlight (the Player) is exploring the camp. The Player's messages are what the kid says to you; answer the latest one directly, and never repeat a line you already said.` },
+    ...recent,
+  ]
+  let raw = ''
+  let blocked = false
+  const stop = new InterruptableStoppingCriteria()
+  const streamer = new TextStreamer(gen.tokenizer, {
+    skip_prompt: true, skip_special_tokens: true,
+    callback_function: (t) => {
+      if (blocked) return
+      raw += t
+      const c = clean(raw, npc.name)
+      // checked on every word, so a bad line is never on screen even for a moment
+      if (UNSAFE_OUT.test(c)) { blocked = true; stop.interrupt(); span.textContent = ''; npc.bubble.classList.add('thinking'); return }
+      if (c) { npc.bubble.classList.remove('thinking'); span.textContent = c }
+    },
+  })
+  try {
+    await gen(msgs, { max_new_tokens: npc === NPCS.silas ? 16 : 60, do_sample: true, temperature: 0.85, top_p: 0.9, repetition_penalty: 1.2, streamer, stopping_criteria: [stop] })
+  } catch (e) {
+    raw = '(error: ' + e.message + ')'
+  }
+  let text = blocked ? pick(npc) : (clean(raw, npc.name) || '...')
+  if (blocked) console.log('[safety] blocked a reply from', npc.name)
+  // Silas whispers: one sentence, a handful of words, never a description of the scene
+  if (npc === NPCS.silas) {
+    const words = text.split(/(?<=[.!?…])\s+/)[0].split(' ')
+    text = words.slice(0, 8).join(' ') + (words.length > 8 ? '…' : '')
+  }
+  npc.bubble.classList.remove('thinking')
+  span.textContent = text
+  npc.turns.push({ role: 'assistant', content: text })
+  npc.talking = false
+  busy = false
+  syncInput()
+  return text
+}
+
+/* ── who are we near? ──────────────────────────────────────────────── */
+let near = null
+function nearest() {
+  let best = null, bd = 3.4
+  for (const n of Object.values(NPCS)) {
+    const d = player.position.distanceTo(n.mesh.position)
+    if (d < bd) { best = n; bd = d }
+  }
+  return best
+}
+
+function syncInput() {
+  const ok = !!gen && !!near && !busy
+  $('say').disabled = !ok
+  $('send').disabled = !ok
+  $('say').placeholder = !gen ? 'Loading…' : busy ? `${near?.name ?? 'They'} is answering…` : near ? `Say something to ${near.name}…` : 'Walk up to someone first…'
+}
+
+async function send() {
+  const t = $('say').value.trim()
+  if (!t || !near || busy) return
+  $('say').value = ''
+  const npc = near
+  if (SELF_HARM.test(t)) {
+    // not a story moment: the game itself answers, gently, outside the fiction
+    console.log('[safety] self-harm wording: showing the care note')
+    $('care').style.display = 'block'
+    return
+  }
+  if (UNSAFE_IN.test(t)) {
+    // the gruesome request never reaches the model: the character refuses, in character
+    console.log('[safety] redirected a player message')
+    await speak(npc, '(I ask you to describe something gruesome in detail. Refuse in a spooky way, and hint at the mystery of the camp instead.)')
+  } else {
+    await speak(npc, t)
+  }
+  if (npc === NPCS.silas) vanish()
+}
+$('send').onclick = send
+$('say').onkeydown = (e) => { if (e.key === 'Enter') send() }
+
+// Silas never lets you get comfortable: after he speaks, he is somewhere else
+function vanish() {
+  setTimeout(() => {
+    const far = SILAS_SPOTS.filter((p) => p.distanceTo(player.position) > 10)
+    NPCS.silas.mesh.position.copy(far[Math.floor(Math.random() * far.length)] ?? SILAS_SPOTS[0])
+    NPCS.silas.bubble.style.display = 'none'
+    flicker = 0.8
+  }, 2500)
+}
+
+/* ── loop ──────────────────────────────────────────────────────────── */
+const clock = new THREE.Clock()
+const tmp = new THREE.Vector3()
+let flicker = 0
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05)
+  const t = clock.elapsedTime
+  const walking = move(dt)
+  player.position.y = walking ? Math.abs(Math.sin(t * 10)) * 0.06 : 0
+
+  fireLight.intensity = 26 + Math.sin(t * 13) * 3 + Math.sin(t * 7.3) * 4
+  flame.scale.y = 1 + Math.sin(t * 11) * 0.12
+
+  // flashlight stutters while Silas is close, or right after he vanishes
+  const silasD = player.position.distanceTo(NPCS.silas.mesh.position)
+  if (flicker > 0) flicker -= dt
+  flashlight.intensity = (silasD < 6 || flicker > 0) && Math.random() < 0.25 ? 4 : 40
+
+  for (const n of Object.values(NPCS)) {
+    const m = n.mesh
+    m.position.y = n.talking ? Math.abs(Math.sin(t * 9)) * 0.08 : Math.sin(t * 2 + m.id) * 0.015
+    if (n === NPCS.silas || n.talking || player.position.distanceTo(m.position) < 6) {
+      const want = Math.atan2(player.position.x - m.position.x, player.position.z - m.position.z)
+      m.rotation.y += Math.atan2(Math.sin(want - m.rotation.y), Math.cos(want - m.rotation.y)) * Math.min(1, dt * (n === NPCS.silas ? 1.2 : 4))
+    }
+    // bubble above the head, only when you are close enough to hear
+    const d = player.position.distanceTo(m.position)
+    const span = n.bubble.querySelector('span')
+    const show = d < 9 && (span.textContent || n.bubble.classList.contains('thinking'))
+    if (show) {
+      tmp.copy(m.position).setY(m.position.y + 2.5 * m.scale.y).project(camera)
+      n.bubble.style.left = ((tmp.x + 1) / 2) * innerWidth + 'px'
+      n.bubble.style.top = ((1 - tmp.y) / 2) * innerHeight + 'px'
+    }
+    n.bubble.style.display = show && tmp.z < 1 ? 'block' : 'none'
+  }
+
+  // walking up to someone: they notice you first
+  const now = nearest()
+  if (now !== near) {
+    near = now
+    syncInput()
+    if (near && gen && !busy && !near.greeted) {
+      near.greeted = true
+      // greetings are written, not generated: the first line sets the mood, so it must not ramble
+      const npc = near
+      const line = pick({ safe: npc.greetings })
+      npc.turns.push({ role: 'user', content: '(I walk up to you in the dark with my flashlight.)' }, { role: 'assistant', content: line })
+      npc.bubble.querySelector('span').textContent = line
+      if (npc === NPCS.silas) vanish()
+    }
+  }
+
+  camera.position.lerp(tmp.copy(player.position).add(new THREE.Vector3(0, 6, 8)), 1 - Math.exp(-dt * 4))
+  camera.lookAt(player.position.x, 1.2, player.position.z)
+  renderer.render(scene, camera)
+  requestAnimationFrame(frame)
+}
+frame()
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+// test hook for the automated play-through (tests/play.mjs)
+window.__game = { player, NPCS, send: (t) => { $('say').value = t; return send() } }
+
+if (!navigator.gpu) {
+  $('loadmsg').textContent = 'This browser has no WebGPU. Open the page in Chrome or Edge.'
+} else {
+  gen = await pipeline('text-generation', 'onnx-community/gemma-3-1b-it-ONNX', {
+    device: 'webgpu', dtype: 'q4f16',
+    progress_callback: (p) => { if (p.status === 'progress' && p.file?.endsWith('onnx_data')) $('loadmsg').textContent = `Loading the AI… ${Math.round(p.progress)}%` },
+  })
+  $('load').style.display = 'none'
+  syncInput()
+}
+</script>
 </body>
 </html>

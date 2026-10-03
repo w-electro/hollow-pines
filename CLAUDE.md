@@ -1,7 +1,8 @@
-# PawTales — working rules
+# Camp Hollow Pines (repo: pawtales) — working rules
 
-- **Nothing on C:.** The C: drive is full. Every download, model cache, install, build output and scratch file goes on D: (scratch work in `D:\W\_scratch\`). Point model caches at D: explicitly (Transformers.js `env.cacheDir`, `HF_HOME`).
-- **Zero budget.** Everything must be free and open source. No paid APIs, no paid hosting. AI runs in the player's browser (WebGPU); hosting is GitHub Pages.
-- **Players are kids (8–14).** Every AI feature needs a safety layer beyond trusting the model: no personal info, no unsafe content, characters stay kind and in-world.
-- **Model choice (from a spike on 2026-10-03):** Gemma 3 1B (`onnx-community/gemma-3-1b-it-ONNX`, q4f16, ~760 MB) held character and stayed kid-safe best; LFM2 1.2B was faster but flattened personalities; Qwen3 1.7B looped. Re-test before committing.
-- Live site: https://w-electro.github.io/pawtales/ (Pages from `main`).
+- **Nothing on C:.** The C: drive is full. Every download, model cache, install, build output and scratch file goes on D: (scratch work in `D:\W\_scratch\`). Point model caches at D: explicitly (Transformers.js `env.cacheDir`, `HF_HOME`); run npm with `npm_config_cache=D:/W/_scratch/.npm-cache`; Playwright drives the installed Chrome with its profile and `--disk-cache-dir` on D:.
+- **Zero budget.** Everything free and open source. No paid APIs, no paid hosting. AI runs in the player's browser (WebGPU); hosting is GitHub Pages from `main`.
+- **Players are 13+ (horror).** Content level matches Roblox horror rated 13+: mild blood is fine; no detailed injuries, torture, or self-harm. Safety is enforced in code (input check, streaming output check, memory guard, self-harm care note) — never rely on the prompt alone. Run `node tests/play.mjs` after changing dialogue code.
+- **IP:** the concept is inspired by camp slashers, but no names, characters or marks from Friday the 13th. The brothers are Mason and Silas.
+- **Model:** Gemma 3 1B (`onnx-community/gemma-3-1b-it-ONNX`, q4f16, ~760 MB). A spike on 2026-10-03 found it held character and stayed safe best; LFM2 1.2B was faster but flat; Qwen3 1.7B looped. It is weak at following concrete requests ("help me find the exit"), so game mechanics should not depend on the model understanding instructions.
+- **Local vs live:** on localhost the page loads libraries from `node_modules` and the model from `/models/` (served by `serve.py` from D:) with no browser caching; on Pages it uses jsDelivr and Hugging Face with normal caching.
