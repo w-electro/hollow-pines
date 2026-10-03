@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>voice check</title>
+<script>
+  // same library decision as index.html, local only (this page is for dev checks)
+  window.HP = { local: true, lib: { tjs: '/node_modules/@huggingface/transformers/dist/transformers.min.js', phonemizer: '/node_modules/phonemizer/dist/phonemizer.js' } }
+</script>
+<pre id="out">loading…</pre>
+<script type="module">
+import { loadVoice } from '/src/voice.js'
+const out = document.getElementById('out')
+const t0 = performance.now()
+await loadVoice(() => {})
+out.textContent = `ready in ${((performance.now() - t0) / 1000).toFixed(1)}s\n`
+// talk to the worker directly to time synthesis and inspect the samples
+const w = new Worker('/src/voice-worker.js', { type: 'module' })
+await new Promise((r) => { w.onmessage = (e) => { if (e.data.type === 'threads') window.__threads = e.data.n; if (e.data.type === 'ready') r() }; w.postMessage({ type: 'init', tjs: location.origin + window.HP.lib.tjs, phonemizer: location.origin + window.HP.lib.phonemizer, local: true, ...Object.fromEntries(new URLSearchParams(location.search)) }) })
+const results = []
+for (const [voice, text] of [['am_puck', 'Warm up.'], ['am_puck', 'Shh, keep your voice low. Did you see my brother?'], ['am_onyx', 'Mason... where are you.']]) {
+  const s = performance.now()
+  const audio = await new Promise((r) => { w.onmessage = (e) => { if (e.data.type === 'audio' || e.data.type === 'error') r(e.data) }; w.postMessage({ type: 'speak', id: 1, text, voice, speed: 1 }) })
+  if (audio.type === 'error') { results.push({ voice, error: audio.message }); continue }
+  const a = audio.audio
+  let peak = 0, rms = 0
+  for (const x of a) { peak = Math.max(peak, Math.abs(x)); rms += x * x }
+  results.push({ voice, seconds: (a.length / 24000).toFixed(2), synthMs: Math.round(performance.now() - s), peak: peak.toFixed(3), rms: Math.sqrt(rms / a.length).toFixed(4) })
+}
+results.push({ threads: window.__threads, isolated: crossOriginIsolated, cores: navigator.hardwareConcurrency })
+out.textContent += JSON.stringify(results, null, 1)
+window.__done = results
+</script>

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.0",
+    "phonemizer": "^1.2.1",
     "three": "0.186.1"
   },
   "devDependencies": {
